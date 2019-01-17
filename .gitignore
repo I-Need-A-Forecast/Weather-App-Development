@@ -1,0 +1,10 @@
+.vsls.json
+.vs/
+
+Weather_App_Cloud_Coverage_Score.py
+Weather_App_Meteorologist_Score.py
+Weather_App_Temperature_Score.py
+Weather_App_User_Flags.py
+Weather_App_Wind_Direction_Score.py
+Weather_App_Wind_Score.py
+Weather_App_Main_Importer.py
