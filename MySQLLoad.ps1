@@ -3,7 +3,7 @@
 #>
 
 #Reload:  Use existing WX\TempXML
-$Reload=$FALSE
+$Reload=$flase
 [void][System.Reflection.Assembly]::LoadWithPartialName("MySql.Data")
 $MySQLAdminUserName = 'dfeltault'
 $MySQLAdminPassword = 'mysql'
@@ -11,6 +11,8 @@ $MySQLDatabase = 'WX'
 $MySQLHost = 'localhost'
 $ConnectionString = "server=" + $MySQLHost + ";port=3306;uid=" + $MySQLAdminUserName + ";pwd=" + $MySQLAdminPassword + ";database="+$MySQLDatabase
 
+Start-Transcript ([environment]::CurrentDirectory + "\MySQLLoad.log") -Append
+("Starting WX Load: " + (get-date).ToShortTimeString())
 if ($DA) {Remove-Variable DA}
 if ($DS) {Remove-Variable DS}
 if ($DT) {Remove-Variable DT}
@@ -82,8 +84,18 @@ Function AddRow($CO) {
     if(!([string]::IsNullOrEmpty($CO.latitude))) {$CORow.latitude=$CO.latitude}
     if(!([string]::IsNullOrEmpty($CO.longitude))) {$CORow.longitude=$CO.longitude}
     if(!([string]::IsNullOrEmpty($CO.elevation))) {$CORow.elevation=$CO.elevation}
+
+    #Additional handling for Date/TIme fields
     if(!([string]::IsNullOrEmpty($CO.observation_time))) {$CORow.observation_time=$CO.observation_time}
-    if(!([string]::IsNullOrEmpty($CO.observation_time_rfc822))) {$CORow.observation_time_rfc822=$CO.observation_time_rfc822}
+    
+    #If we don't get a good date/time  skip this record
+    if(([string]::IsNullOrEmpty($CO.observation_time_rfc822))) {break}
+    $CORow.observation_time_rfc822=$CO.observation_time_rfc822
+    [Datetime]$ObsDate = $CO.observation_time_rfc822
+    $USTDateTime = $ObsDate.ToUniversalTime()
+    $CORow.obsDate = $USTDateTime.ToShortDateString()
+    $CORow.obsTime = $USTDateTime.tostring("HH:mm:ss")
+
     if(!([string]::IsNullOrEmpty($CO.weather))){$CORow.weather=$CO.weather}
     if(!([string]::IsNullOrEmpty($CO.temperature_string))) {$CORow.temperature_string=$CO.temperature_string}
     if(!([string]::IsNullOrEmpty($CO.temp_f))) {$CORow.temp_f=$CO.temp_f}
@@ -160,47 +172,32 @@ Function WriteDT {
 
 Function ReadAllXML 
 {
-$TempLocation = ( (Get-Item -Path ".\").FullName + "\TempXML" )
+
+$TempLocation = [environment]::GetEnvironmentVariable("TMP") + "\WX-XML"
+
  if (!$Reload) {
-        Remove-Item  ($TempLocation + "\*.xml")
+    #Ensure a clean start
+    if(test-path ($TempLocation + "\*.xml")){Remove-Item  ($TempLocation + "\*.xml")}
     
    
-    $VMTemp = $VerbosePreference
-    $VerbosePreference="SilentlyContinue"
-    
+    #$VMTemp = $VerbosePreference
+    #$VerbosePreference="SilentlyContinue"
+    "Download all_xml.zip TO TMP..."
+    Invoke-WebRequest -Uri 'https://w1.weather.gov/xml/current_obs/all_xml.zip' -WebSession $fb -OutFile ([environment]::GetEnvironmentVariable("TMP")+'\all_xml.zip')
     "Unzipping Files..."
-    <#  This is an attemp at pulling the zip directly from the web....
-     #$wc = New-Object System.Net.WebClient
-    #$DownloadDest = (((Get-Item -Path ".\").FullName) + "\")
-    #$wc.DownloadFile("https://w1.weather.gov/xml/current_obs/all_xml.zip", "all_xml.zip" )
-
-        $Response = Invoke-WebRequest –Uri https://w1.weather.gov/xml/current_obs/all_xml.zip
-        $Stream = [System.IO.StreamWriter]::new((Get-Item -Path ".\").FullName +'\All_XML.zip', $false)
-        try {
-            $Stream.Write($response.RawContent)
-        }
-        finally {
-            $Stream.Dispose()
-        }
-
-        # and another try
-        $WXURL = "https://w1.weather.gov/xml/current_obs/all_xml.zip"
-    $AllXMLFileName = ((Get-Item -Path ".\").FullName +'\All_XML.zip')
-    (New-Object System.Net.WebClient).DownloadFile($WXURL,$AllXMLFileName )
-
-    #>
-    
-
-    Expand-Archive -path c:\users\david\downloads\all_xml.zip  -DestinationPath $TempLocation
-    $VerbosePreference = $VMTemp
+    Expand-Archive -path ([environment]::GetEnvironmentVariable("TMP")+'\all_xml.zip')  -DestinationPath $TempLocation
+    #$VerbosePreference = $VMTemp
     }
 
 
-    Get-ChildItem $TempLocation  | 
+    Get-ChildItem $TempLocation | sort LastWriteTime   | 
     Foreach-Object {
+        #Eliminate Old observations
+        if($_.LastWriteTimeUtc -gt [datetime]::Today) {
         #ReadObsXML may return Null if failed to read
         $Obs = ReadObsXML $_.FullName
         if(!([string]::IsNullOrEmpty($Obs))) {AddRow($Obs.current_observation) | out-null}
+        }
     }
 }
 
@@ -209,14 +206,15 @@ $StartTime = $(get-date)
 
 GetObsTable
 ReadAllXML
-("Row Added, Rows: " +  $ds.Tables[0].Rows.Count)
+("Rows Added: " +  $ds.Tables[0].Rows.Count)
 $elapsedTime = $(get-date) - $StartTime
 $ReadTime = "{0:HH:mm:ss}" -f ([datetime]$elapsedTime.Ticks)
 "ReadTime: " + $ReadTime
 $StartTime = $(get-date)
 
 WriteDT
-Remove-Item c:\users\david\downloads\all_xml.zip
+#if(test-path ($tempLocation)) {Remove-Item ($TempLocation)}
 $elapsedTime = $(get-date) - $StartTime
 $totalTime = "{0:HH:mm:ss}" -f ([datetime]$elapsedTime.Ticks)
-"Write Time: " + $totalTime
+("Write Time: " + $totalTime)
+stop-Transcript

@@ -3,10 +3,13 @@ GRANT ALL PRIVILEGES ON *.* TO 'dfeltault'@'localhost'
 create database WX;
 
 USE WX;
+DROP TABLE current_observation;
 
 CREATE TABLE if not exists current_observation
 (
 	Observation_ID INT not null auto_increment UNIQUE Primary Key
+,obsDate date NOT NULL
+,obsTime time NOT NULL
 ,credit VARCHAR(255) 
 ,credit_URL VARCHAR(255) 
 ,suggested_pickup VARCHAR(255) 
